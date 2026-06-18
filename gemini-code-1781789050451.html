@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>北投士林古蹟 OSM 地圖大富翁</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <style>
+        :root {
+            --primary: #8d775f;
+            --primary-dark: #6b543f;
+            --bg: #f4f1ea;
+            --card-bg: #ffffff;
+        }
+        body {
+            font-family: "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif;
+            background-color: var(--bg);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            color: #333;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+            padding: 15px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 24px;
+            color: var(--primary-dark);
+            margin: 0 0 5px 0;
+        }
+        .header p {
+            font-size: 13px;
+            color: #7c6853;
+            margin: 0 0 15px 0;
+        }
+        
+        /* OSM 地圖畫布 */
+        #map {
+            width: 100%;
+            height: 450px;
+            border: 2px solid var(--primary);
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            margin-bottom: 15px;
+            background: #e0edd4;
+        }
+
+        /* 跑馬燈跳躍時的自訂地圖圖標樣式 */
+        .custom-dot {
+            background-color: #baa286;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            color: #fff;
+            text-align: center;
+            font-size: 10px;
+            font-weight: bold;
+            line-height: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+            transition: all 0.1s ease;
+        }
+        
+        /* 亮燈奔跑時的無敵發光特效 */
+        .custom-dot.active {
+            background-color: #e74c3c !important;
+            box-shadow: 0 0 15px #e74c3c, 0 0 25px #e74c3c;
+            transform: scale(1.5);
+            z-index: 9999 !important;
+        }
+
+        .control-panel {
+            margin-bottom: 15px;
+        }
+        .dice-btn {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 14px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(141,119,95,0.3);
+            width: 100%;
+            transition: background 0.2s;
+        }
+        .dice-btn:disabled {
+            background-color: #cccccc;
+            box-shadow: none;
+            cursor: not-allowed;
+        }
+
+        /* 最終落點大彈窗 */
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+        }
+        .popup-card {
+            background: white;
+            width: 90%;
+            max-width: 450px;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            border: 3px solid var(--primary);
+            animation: zoomIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes zoomIn {
+            from { transform: scale(0.7); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        .popup-header {
+            background: var(--primary);
+            color: white;
+            padding: 12px;
+            font-size: 18px;
+            font-weight: bold;
+            position: relative;
+        }
+        .close-btn {
+            position: absolute;
+            right: 15px; top: 50%;
+            transform: translateY(-50%);
+            background: none; border: none; color: white;
+            font-size: 20px; cursor: pointer;
+        }
+        .popup-body {
+            padding: 15px;
+            text-align: center;
+        }
+        .popup-body h2 {
+            margin: 0 0 12px 0;
+            font-size: 22px;
+            color: var(--primary-dark);
+        }
+        .image-container {
+            width: 100%;
+            height: 280px;
+            background: #eee;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .image-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>北投士林古蹟地圖大富翁 🎲</h1>
+        <p>OSM底圖跑馬燈連動・點擊出發開獎！</p>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="control-panel">
+        <button class="dice-btn" id="diceBtn" onclick="startMapMarquee()">🎲 按下擲骰子，OSM 地圖奔跑開獎！</button>
+    </div>
+</div>
+
+<div class="overlay" id="overlay">
+    <div class="popup-card">
+        <div class="popup-header">
+            <span id="popupBadge">第 0 格</span>
+            <button class="close-btn" onclick="closePopup()">✕</button>
+        </div>
+        <div class="popup-body">
+            <h2 id="popupName">古蹟名稱</h2>
+            <div class="image-container">
+                <img id="popupImg" src="" alt="古蹟照片">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+    // 依據你的 GeoJSON 抽取出來的真實經緯度（[緯度, 經度]）與第一張圖網址庫
+    const landmarks = {
+        1: { name: "北投文物館", latlng: [25.138164, 121.515008], img: "https://lh3.googleusercontent.com/d/1zAtArUrg4UoW2HnYo4ce7qfK0lyLZMLu" },
+        2: { name: "普濟寺", latlng: [25.136494, 121.511872], img: "https://lh3.googleusercontent.com/d/1ZbYxRIIV_w2cD-p8ngCLl99X8ZKThJfg" },
+        3: { name: "蔣中正宋美齡士林官邸", latlng: [25.093419, 121.532303], img: "https://lh3.googleusercontent.com/d/1i8zXTSOFSA7Oy3wsJDaFpg7pOFkX24Td" },
+        4: { name: "介壽堂", latlng: [25.153239, 121.550172], img: "https://lh3.googleusercontent.com/d/1ONklKUYbZ_0eBZam9pIYlNh4kxXjYcjM" },
+        5: { name: "陽明山中山樓", latlng: [25.155647, 121.552719], img: "https://lh3.googleusercontent.com/d/18_dJpbLp60tBj51OKRIhM2NfNtj9KDAi" },
+        6: { name: "農禪寺", latlng: [25.123058, 121.495706], img: "https://lh3.googleusercontent.com/d/1PJNF6aKEXtUiufKL5cmnEL3SObkHpu5I" },
+        7: { name: "士林神農宮(芝蘭廟)", latlng: [25.097636, 121.526344], img: "https://lh3.googleusercontent.com/d/1dUSCJebvqfJfiq7ufIUQbVfjlZMOEvqn" },
+        8: { name: "周氏節孝坊", latlng: [25.134072, 121.497819], img: "https://lh3.googleusercontent.com/d/1CPPXAFFWytvP17sUC9-pp6cW08WV6so9" },
+        9: { name: "北投磺田福佑宮", latlng: [25.137183, 121.499236], img: "https://lh3.googleusercontent.com/d/1xaebLtd9MPaPruMYxQh17Le9WLzg65Yu" },
+        10: { name: "七虎籃球場", latlng: [25.134589, 121.501014], img: "https://lh3.googleusercontent.com/d/1rkP5pM7EWnCHy59sx-oA3oOnYiA5MWpI" },
+        11: { name: "北投陳氏祠堂", latlng: [25.134444, 121.502222], img: "https://lh3.googleusercontent.com/d/1JtixqNNdx2gdGbjJO0ftqrnrnmxtNGeB" },
+        12: { name: "張羣故居", latlng: [25.135278, 121.505556], img: "https://lh3.googleusercontent.com/d/1Q9t3Rc6k4xFp2ld1hIQmjGWvvZdGLDqM" },
+        13: { name: "陽明山美軍福利社", latlng: [25.1375, 121.538333], img: "https://lh3.googleusercontent.com/d/1iBOAEDpQWWqa6Ht1OcGWRk2Ds_X5B9Up" },
+        14: { name: "陽明山美軍俱樂部", latlng: [25.136944, 121.540278], img: "https://lh3.googleusercontent.com/d/1DSgGjTxMCkXtCRneFlfHjRhAFbMQ3Ho3" },
+        15: { name: "北投賴氏祖厝", latlng: [25.125556, 121.501944], img: "https://lh3.googleusercontent.com/d/16ywVDVahcV0_2DgmQPAyu5Ym864DCqrn" },
+        16: { name: "北投陳江墓園", latlng: [25.148611, 121.505278], img: "https://lh3.googleusercontent.com/d/1WBARaMRdDojAZ0QnO8cIMRAll2LHQa8R" },
+        17: { name: "中國電影製片廠-A攝影棚、錄音室", latlng: [25.140833, 121.4925], img: "https://lh3.googleusercontent.com/d/1C5o4FY5JHWngLZv-HpuMVaeRz7qVBkOA" },
+        18: { name: "羅友倫故居", latlng: [25.139722, 121.543611], img: "https://lh3.googleusercontent.com/d/1b-n9dcltagmHrNuF3aHG_Qj-mqp4_fL6" },
+        19: { name: "社子島善居室", latlng: [25.105278, 121.468889], img: "https://lh3.googleusercontent.com/d/137089-yTDd6UGcvxHwJ3TXJudzIRDFYo" },
+        20: { name: "社子島燕樓李家", latlng: [25.101111, 121.474444], img: "https://lh3.googleusercontent.com/d/1tNy-0QLwe9aj3m2h0UmDFf4OKQL5uK4F" },
+        21: { name: "社子島溪洲底王宅", latlng: [25.097778, 121.479167], img: "https://lh3.googleusercontent.com/d/1FQy8pJgwCeSNqVuC6f6w4297Pwq8E7Zs" },
+        22: { name: "社子島溪洲底郭宅", latlng: [25.095556, 121.481944], img: "https://lh3.googleusercontent.com/d/1Vpqknm5F-vnS3pntsqaWa-bO82ip7okt" },
+        23: { name: "新北投車站", latlng: [25.132778, 121.503056], img: "https://lh3.googleusercontent.com/d/1SY4bnG3yTDlI-BKPVKG564zyai6aXBaq" },
+        24: { name: "士林紙廠", latlng: [25.094444, 121.521111], img: "https://lh3.googleusercontent.com/d/1nqTS9Ou-F5upXfE0AqcwjPllhvKkT0On" },
+        25: { name: "士林公有市場", latlng: [25.088611, 121.524444], img: "https://lh3.googleusercontent.com/d/1ySburoV7FOngBqpORUyHRGMuxtpT23I-" },
+        26: { name: "士林慈誠宮", latlng: [25.088194, 121.525278], img: "https://lh3.googleusercontent.com/d/13xkeXwse7aKrN3FPJ7WuNnx5tJ9NIRUd" },
+        27: { name: "北投公共浴場", latlng: [25.13665, 121.506819], img: "https://lh3.googleusercontent.com/d/1EkNnP79jmMPmrhWksIOTAF5snLyxUM_p" }
+    };
+
+    // 1. 初始化 OSM 地圖，中心點預設在士林北投交界
+    const map = L.map('map').setView([25.125, 121.515], 12);
+
+    // 2. 載入 OpenStreetMap 圖磚
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // 3. 儲存地圖上所有的標記 DOM 參考，以便後面切換跑馬燈
+    const markerElements = {};
+
+    // 在地圖上繪製 27 個真實座標標記
+    for (let id in landmarks) {
+        const pt = landmarks[id];
+        
+        // 自訂圓點 HTML 標記
+        const customIcon = L.divIcon({
+            className: `custom-dot id-${id}`,
+            html: id,
+            iconSize: [22, 22],
+            iconAnchor: [11, 11]
+        });
+
+        const marker = L.marker(pt.latlng, { icon: customIcon }).addTo(map);
+        
+        // 綁定基本的點擊可以直接看名字（當作備用功能）
+        marker.bindTooltip(pt.name, { direction: 'top', offset: [0, -10] });
+    }
+
+    // 跑馬燈主程式邏輯
+    function startMapMarquee() {
+        const btn = document.getElementById("diceBtn");
+        btn.disabled = true;
+        
+        let currentId = 1;
+        let speed = 60; 
+        let steps = 0;
+        let totalSteps = 25 + Math.floor(Math.random() * 27); // 亂數決定步數
+
+        // 由於 Leaflet 的 Marker 渲染是在地圖層內部，我們直接透過 CSS Class 來抓取並給予 active 發光效果
+        function run() {
+            // 清除全部點的 active 特效
+            document.querySelectorAll('.custom-dot').forEach(el => el.classList.remove('active'));
+            
+            // 抓取當前號碼的 DOM 節點並亮燈
+            const currentEl = document.querySelector(`.custom-dot.id-${currentId}`);
+            if (currentEl) currentEl.classList.add('active');
+            
+            steps++;
+            
+            if (steps < totalSteps) {
+                currentId = (currentId % 27) + 1;
+                // 後段減速煞車
+                if (totalSteps - steps < 8) {
+                    speed += 50;
+                }
+                setTimeout(run, speed);
+            } else {
+                // 跑馬燈終點定格！
+                setTimeout(() => {
+                    openPopup(currentId);
+                    btn.disabled = false;
+                }, 400);
+            }
+        }
+        run();
+    }
+
+    // 彈出放大顯示視窗
+    function openPopup(id) {
+        const data = landmarks[id];
+        document.getElementById("popupBadge").innerText = `🎯 大富翁踩點：第 ${id} 格`;
+        document.getElementById("popupName").innerText = data.name;
+        document.getElementById("popupImg").src = data.img;
+        document.getElementById("overlay").style.display = "flex";
+        
+        // 同步把地圖視角移動到該中獎古蹟的真實中心點上，效果更專業
+        map.panTo(data.latlng);
+    }
+
+    // 關閉彈出視窗
+    function closePopup() {
+        document.getElementById("overlay").style.display = "none";
+    }
+</script>
+</body>
+</html>
